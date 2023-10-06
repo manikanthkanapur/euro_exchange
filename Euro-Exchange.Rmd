@@ -1,0 +1,192 @@
+---
+title: "Euro Exchange"
+author: "Manikanth Kanapur"
+date: "2023-10-04"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+#### 1. Installing packages `tidyverse`, `skimr`, `janitor`, `knitr`
+
+The first step is to load the packages which would be used to perform the tasks needed to answer
+questions related to this dataset.
+
+#### 2. Loading libraries
+
+This step is crucial as without it we cannot run our code. So, we have to load the packages which
+we have installed earlier. Tidyverse contains a list of other packages which are needed for data analysis tasks. Skimr is used to generate a summary of a dataframe which is crucial for data cleaning purposes, while the Janitor is used to clean the names of the attributes of the dataframe. The later is important because, we want to make sure that all the names are in the same format. Knitr is used to display the result of the dataframe in a tabular format in the final document.
+
+```{r loading of libraries, echo=TRUE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(skimr)
+library(janitor)
+library(knitr)
+```
+
+#### 3. Importing raw dataset
+
+In this step, the raw dataset is imported which is in the form of a csv file
+
+```{r importing raw data to work with, echo=TRUE, message=FALSE, warning=FALSE}
+exchange_raw_df <- read_csv("euro_exchange.csv")
+skim_without_charts(exchange_raw_df) 
+```
+
+Here, the "skim..." function is used to generate a summary of the imported dataset. With this,
+we can have an overview of what actually the data contains. Our main focus here is to check the datatypes and see if they need any modifications.
+
+#### 4. Data cleaning
+
+In this step, the raw dataset is cleaned. The summary of the dataset as shown above tells us that the data contains 2 types of variables, i.e., character, numeric and a date class. The list of characters should be numeric as we have a dataset which tells us how the currencies of different countries changed over time against Euro. In addition to this, the attributes are embedded inside [] which needs to be cleaned as well.  
+
+##### a) Removing duplicate rows from the dataset.
+
+```{r removing duplicate rows, echo=TRUE, message=FALSE, warning=FALSE}
+exchange_clean_df <- unique(exchange_raw_df)
+```
+
+##### b) Removal of [] from the column names.
+
+```{r removal of [], echo=TRUE, message=FALSE, warning=FALSE}
+col_names_new <- colnames(exchange_clean_df)
+col_names_edit <- str_replace_all(col_names_new, "\\[|\\ ]\\s*", "")
+colnames(exchange_clean_df) <- col_names_edit
+```
+
+First, gsub was used to get rid of [] from the column names but it removed [] partially. Probably, there are some hidden characters in the column names. Therefore, str was used instead. In this, \\ followed by "[" and "]" is used to treat both "[" & "]" as characters, while \\s* is used to remove empty space after "]". "|" is used to match either "[" or "]".
+
+##### c) Fixing datatypes of the columns.
+
+```{r changing datatypes, echo=TRUE, message=FALSE, warning=FALSE}
+character_col <- sapply(exchange_clean_df, is.character)
+exchange_clean_df[, character_col] <- lapply(exchange_clean_df[, character_col], as.numeric) 
+```
+
+Here, sapply means simplify and apply. It is used to check if the data in columns are characters or numeric. It will return TRUE for character & FALSE for numeric. Once you identify the columns with characters, you can convert them to numeric using lapply which means list apply.
+
+##### d) Renaming column names to lower & snake case for convenience.
+
+```{r renaming columns, echo=TRUE, message=TRUE, warning=FALSE}
+exchange_clean_df <- clean_names(exchange_clean_df) 
+exchange_clean_df <- rename(exchange_clean_df, date = period_unit)
+skim_without_charts(exchange_clean_df)
+```
+
+#### 4. Data analysis
+
+As the dataset is clean now as shown in the previous step, we can proceed ahead with the analysis part. Since there are many countries in the dataset, let's focus only on India now and check how the value of Indian Rupee changed against Euro over time. To do this, first we will create a new dataframe which would give us the summary of the data pertaining to India only using pipes.
+
+```{r exchange summary of india, echo=TRUE, message=TRUE, warning=FALSE}
+exchange_india_summary <- exchange_clean_df %>% 
+  summarise(min_india = round(min(indian_rupee, na.rm = T),2), max_india = 
+            round(max(indian_rupee, na.rm = T),2), mean_india = round(mean(indian_rupee, 
+            na.rm = T),2), std_india = round(sd(indian_rupee, na.rm = T),2), 
+            min_year = min(date), max_year = max(date))
+knitr::kable(exchange_india_summary)
+```
+
+##### a) Checking for date at which the Indian Rupee touched the maximum against Euro 
+
+```{r INR maximum, echo=TRUE, message=TRUE, warning=FALSE}
+max_exchange_date <- exchange_clean_df %>%
+  filter(indian_rupee == exchange_india_summary$max_india) %>% 
+  select(date) %>% 
+  pull()
+```
+
+##### b) Now, lets plot everything and see how the trend of INR against Euro appears over time. 
+
+In this section, the plot is divided into parts to follow easily without any confusion. With p1_india, we get a plot with labels. In p2_india, we add themes to the p1_india. In p3_india, we adjust the scales of both x and y-axis. Here, on the x-axis, we convert the dates to date class as we don't want the scale function to treat date either as a character or numeric datatype. The quality of the output plot might not be good as this rmd document is saved in a html format. The quality of the plot can be improved by adjusting the dpi in ggsave. 
+
+```{r plot of inr trend, echo=TRUE, message=TRUE, warning=FALSE}
+p1_india <- ggplot(exchange_clean_df, aes(x = date, y = indian_rupee)) + geom_line(color = "#0057e7") + labs(title = "Trend of INR against Euro", x = "Year", y = "INR") 
+
+p2_india <- p1_india + theme(plot.title = element_text(hjust = 0.5, color = "#0057e7"), panel.grid =  element_blank(), panel.background = element_blank(), axis.text.x = element_text(color = "#0057e7"), axis.text.y = element_text(color = "#0057e7"), axis.title = element_text(color = "#0057e7")) 
+
+p3_india <- p2_india + scale_y_continuous(limits = c(0, 100)) + scale_x_date(breaks = seq(from = as.Date("1999-01-04"), to = as.Date("2023-05-26"), by = "4 years"), date_labels = "%Y")
+
+print(p3_india)
+```
+
+##### c) Lets investigate quarterly trends of INR against Euro
+
+The main purpose of this part is to check if the fluctuation in the value of INR against Euro is seasonal. First, a new dataframe is created which would divide the dates in our cleaned dataset to quarters by using quarter function. By default the division is in 4 parts, i.e., Jan-Mar, Apr-Jun, Jul-Sep, and Oct-Dec.  
+
+```{r quarterly trends of inr, echo=TRUE, message=TRUE, warning=FALSE}
+exchange_quarter_df <- exchange_clean_df %>% 
+  select(-date) %>% 
+  mutate(date_quarter = quarter(exchange_clean_df$date)) %>% 
+  group_by(date_quarter) %>% 
+  summarise(indian_rupee_quarter = round(mean(indian_rupee, na.rm = T),2))
+knitr::kable(exchange_quarter_df)
+```
+
+##### d) Plotting quarterly trends of INR against Euro
+
+```{r plot of quarterly trends of inr, echo=TRUE, message=TRUE, warning=FALSE}
+p1_quarter <- ggplot(exchange_quarter_df, aes(x = date_quarter, y = exchange_quarter_df$indian_rupee_quarter)) + geom_col(fill = "#0057e7") 
+
+p2_quarter <- p1_quarter + labs(title = "Quarterly Trend of INR against Euro", x = "Quarter", y = "INR", caption = "Q1 (Jan-Mar), Q2 (Apr-Jun), Q3 (Jul-Sep), Q4 (Oct-Dec)") 
+
+p3_quarter <- p2_quarter + theme(plot.title = element_text(hjust = 0.5, color = "#0057e7"), axis.title = element_text(color = "#0057e7"), axis.text.x = element_text(color = "#0057e7"), axis.text.y = element_text(color = "#0057e7"), panel.background = element_blank(), panel.grid = element_blank(), plot.caption = element_text(color = "#0057e7")) 
+  
+p4_quarter <- p3_quarter + scale_y_continuous(limit = c(0,80))
+
+print(p4_quarter)
+```
+
+##### e)  Identification of correlation between INR and currencies of some other major countries which include USA, Canada, China and Japan
+
+The correlation b/w INR and other currencies is to find out how the fluctuation in INR effects the exchange rates of other countries. If the correlation is positive, this means that when the value of INR increase, the value of other currency also increase. When the correlation is negative, it means that when the value of INR decrease, the value of other currency also decrease. Either way, if the value of correlation is over 0.9, it can be considered strong otherwise weak. 
+
+```{r correlation, echo=TRUE, message=TRUE, warning=FALSE}
+correlation_value <- c(round(cor(exchange_clean_df$indian_rupee, exchange_clean_df$us_dollar,
+                                 use = "complete.obs"), 2),
+                       round(cor(exchange_clean_df$indian_rupee, exchange_clean_df$chinese_yuan_renminbi, 
+                                 use = "complete.obs"), 2),
+                       round(cor(exchange_clean_df$indian_rupee, exchange_clean_df$canadian_dollar, 
+                                 use = "complete.obs"), 2), 
+                       round(cor(exchange_clean_df$indian_rupee, exchange_clean_df$japanese_yen, 
+                                 use = "complete.obs"), 2))
+correlation_countries <- c("USA", "China", "Canada", "Japan")
+correlation_with_india_df <- data.frame(correlation_countries, correlation_value)
+
+knitr::kable(correlation_with_india_df)
+```
+
+#### 5. Application of Machine Learning (ML) models
+
+Since from the first plot, i.e., trend of INR against Euro, we can clearly see that with date the value of INR is increasing. This relationship is linear, and we can use this information to create a model, and with this model, we can predict the value of INR in the future. Selection of a suitable ML models is important to perform this task. So, we can proceed ahead with a liner regression model which also aligns with the trend of INR. 
+
+Since, we are working with 2 variables, i.e., date and indian_rupee, lets create a new dataframe containing only these 2 variables. Here, as the value of INR is changing over time, we can treat it as dependent variable and date as independent variable. We need to omit na values as the model shouldn't contain them to run. 
+
+```{r exchange data for model, echo=TRUE, message=FALSE, warning=FALSE}
+exchange_model <- exchange_clean_df %>% 
+  select(date, indian_rupee) %>% 
+  na.omit()
+```
+
+Now, lets create a linear regression model and check the summary on how it looks.
+
+```{r lr model, echo=TRUE, message=TRUE, warning=FALSE}
+lr_model <- lm(indian_rupee ~ date, data = exchange_model)
+summary(lr_model)
+```
+
+From the above summary, there are few important areas to focus, i.e., value of R-square, value of INR estimate against date, and p-value. Lets break these things down: High-value of R square in our case tells us how well the model was able to capture ups and downs in the INR value over time. p-value should be less than 0.05 for a strong relationship between the two variables in our dataframe, and in our case, the smaller p-value suggests that the change in INR is strongly related to date. The value of INR estimate against date is the value of INR change for every step of increase in the date. 
+
+Based on all these results, we can make a conclusion that our model is good and can be relied upon to predict the value of INR in the future. It is important to remember that the date is not the only factor which effects the change of INR. There could be some other factors, for e.g., Govt. policies, FDI's, Inflation, etc,. However, in the context of our dataset, we can rely on the date to predict the value of INR in the future. Now, lets focus on the date for prediction. 
+
+```{r future date, echo=TRUE, message=FALSE, warning=FALSE}
+future_date <- as.Date("2050-01-01")
+```
+
+The next step is to feed this date to the model to predict the value of INR.
+
+```{r inr prediction, echo=TRUE, message=TRUE, warning=FALSE}
+predict_inr <- predict(lr_model, newdata = data.frame(date = future_date))
+print(predict_inr)
+```
+
